@@ -1,76 +1,96 @@
 version: '3.3'
 services:
-  mongo_db:
-    image: mongo:3.2
+
+  mongo:
+    image: mongo:${MONGO_VERSION}
+    deploy:
+      placement:
+        constraints:
+          - node.labels.reliability == high       
     volumes:
-      - post_db:/data/db
+      - mongo_data:/data/db
     networks:
-      reddit:
+      back_net:
         aliases:
           - post_db
           - comment_db
-  ui:
-    image: ${USERNAME}/ui:latest
-    ports:
-      - 9292:9292/tcp
-    networks:
-      - reddit
+
   post:
-    image: ${USERNAME}/post:latest
+    image: ${USER_NAME}/post:${POST_VERSION}
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 10
+        delay: 1s
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 300M
+      mode: replicated
+      replicas: 3
+      update_config:
+        delay: 10s
+        parallelism: 2
+        failure_action: rollback
+      placement:
+        constraints:
+          - node.role == worker
     networks:
-      - reddit
+      - front_net
+      - back_net
+
   comment:
-    image: ${USERNAME}/comment:latest
+    image: ${USER_NAME}/comment:${COMMENT_VERSION}
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 15
+        delay: 1s
+      resources:
+        limits:
+          cpus: '0.30'
+          memory: 300M
+      mode: replicated
+      replicas: 3
+      update_config:
+        delay: 10s
+        parallelism: 2
+        failure_action: rollback
+      placement:
+        constraints:
+          - node.role == worker
     networks:
-      - reddit
-  prometheus:
-    image: ${USERNAME}/prometheus:latest
+      - front_net
+      - back_net
+
+  ui:
+    image: ${USER_NAME}/ui:${UI_VERSION}
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 3s
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 150M
+      mode: replicated
+      replicas: 3
+      update_config:
+        delay: 5s
+        parallelism: 1
+        failure_action: pause
+      placement:
+        constraints:
+          - node.role == worker
     ports:
-      - '9090:9090'
+      - "${UI_PORT}:9292/tcp"
     networks:
-      - reddit
-  node-exporter:
-    image: prom/node-exporter:v0.15.0
-    user: root
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
-    networks:
-      - reddit
-  cadvisor:
-    image: google/cadvisor:latest
-    volumes:
-      - '/:/rootfs:ro'
-      - '/var/run:/var/run:rw'
-      - '/sys:/sys:ro'
-      - '/var/lib/docker/:/var/lib/docker:ro'
-    ports:
-      - '8080:8080'
-    networks:
-      - reddit
-  grafana:
-    image: grafana/grafana
-    volumes:
-      - grafana_data:/var/lib/grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=secret
-    depends_on:
-      - prometheus
-    ports:
-      - 3000:3000
-    networks:
-      - reddit
-      
+      - front_net
 
 volumes:
-  post_db:
-  grafana_data:
+  mongo_data: {}
 
 networks:
-  reddit:
+  back_net: {}
+  front_net: {}
